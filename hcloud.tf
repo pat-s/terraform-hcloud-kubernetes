@@ -55,6 +55,8 @@ data "helm_template" "hcloud_ccm" {
         KUBERNETES_SERVICE_PORT                       = { value = tostring(local.kube_prism_port) }
       }
     }),
+    # Auto-exclude external (non-hcloud) worker nodes from node-lifecycle deletion.
+    yamlencode(local.external_workers_ccm_helm_values),
     yamlencode(var.hcloud_ccm_helm_values)
   ]
 }
@@ -167,6 +169,8 @@ data "helm_template" "hcloud_csi" {
       }
       storageClasses = local.hcloud_csi_storage_classes
     }),
+    # Auto-exclude external (non-hcloud) worker nodes from the CSI node DaemonSet.
+    yamlencode(local.external_workers_csi_helm_values),
     yamlencode(var.hcloud_csi_helm_values)
   ]
 }

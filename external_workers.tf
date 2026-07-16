@@ -31,6 +31,46 @@ variable "external_worker_nodepools" {
   description = "Out-of-band (non-hcloud) Talos workers to render join configs for. Keyed by node name."
 }
 
+variable "external_workers_disable_ccm_node_lifecycle" {
+  type        = bool
+  default     = true
+  description = "When external_worker_nodepools is set, disable the hcloud CCM cloud-node-lifecycle controller so it does not delete the non-hcloud nodes (which it treats as \"does not exist in the cloud provider\"). Cluster-wide side effect: dead hcloud nodes are then not auto-reaped. Set false only if you keep external nodes off that controller another way."
+}
+
+locals {
+  external_workers_enabled = length(var.external_worker_nodepools) > 0
+
+  # CCM: the default controller set runs cloud-node-lifecycle, which deletes any
+  # node missing from the hcloud API - including external nodes. The Talos CCM
+  # owns node lifecycle here, so disable it when external nodes exist. Merged into
+  # the CCM chart values in hcloud.tf. Opt-out via the variable above.
+  external_workers_ccm_helm_values = (local.external_workers_enabled && var.external_workers_disable_ccm_node_lifecycle) ? {
+    args = { controllers = "*,-cloud-node-lifecycle" }
+  } : {}
+
+  # CSI node DaemonSet: the chart's default affinity only excludes robot/root
+  # servers (NotIn ...), which a label-less external node satisfies, so the driver
+  # schedules there and crashloops (it cannot attach hcloud volumes). Require a
+  # real cloud node. Merged into the CSI chart values in hcloud.tf.
+  external_workers_csi_helm_values = local.external_workers_enabled ? {
+    node = {
+      affinity = {
+        nodeAffinity = {
+          requiredDuringSchedulingIgnoredDuringExecution = {
+            nodeSelectorTerms = [{
+              matchExpressions = [
+                { key = "instance.hetzner.cloud/is-root-server", operator = "NotIn", values = ["true"] },
+                { key = "instance.hetzner.cloud/provided-by", operator = "NotIn", values = ["robot"] },
+                { key = "instance.hetzner.cloud/provided-by", operator = "In", values = ["cloud"] },
+              ]
+            }]
+          }
+        }
+      }
+    }
+  } : {}
+}
+
 locals {
   # The cluster-level worker base for external nodes: the same settings a managed
   # worker gets, WITHOUT the hcloud-specific link/nodeIP/cloud-provider/volume
