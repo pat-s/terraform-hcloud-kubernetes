@@ -73,7 +73,10 @@ locals {
     control_plane_nodes                 = local.control_plane_private_ipv4_list
     worker_nodes = concat(
       local.worker_private_ipv4_list,
-      local.cluster_autoscaler_private_ipv4_list
+      local.cluster_autoscaler_private_ipv4_list,
+      # Out-of-band nodes are real k8s nodes but not module servers; without this
+      # the health gate reports them as "unexpected nodes" and hangs forever.
+      [for np in var.external_worker_nodepools : np.node_ipv4 if np.node_ipv4 != null]
     )
   })
 
